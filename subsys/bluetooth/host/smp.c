@@ -167,10 +167,10 @@ struct bt_smp {
 	uint8_t				tk[16];
 
 	/* Remote Public Key for LE SC */
-	uint8_t				pkey[64];
+	uint8_t				pkey[BT_PUB_KEY_LEN];
 
 	/* DHKey */
-	uint8_t				dhkey[32];
+	uint8_t				dhkey[BT_DH_KEY_LEN];
 
 	/* Remote DHKey check */
 	uint8_t				e[16];
@@ -1499,7 +1499,7 @@ static uint8_t smp_br_ident_addr_info(struct bt_smp_br *smp,
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_SIGNING_INFO);
 	}
 
-	if (conn->role == BT_CONN_ROLE_MASTER && !smp->remote_dist) {
+	if (conn->role == BT_CONN_ROLE_CENTRAL && !smp->remote_dist) {
 		smp_br_distribute_keys(smp);
 	}
 
@@ -1538,7 +1538,7 @@ static uint8_t smp_br_signing_info(struct bt_smp_br *smp, struct net_buf *buf)
 
 	smp->remote_dist &= ~BT_SMP_DIST_SIGN;
 
-	if (conn->role == BT_CONN_ROLE_MASTER && !smp->remote_dist) {
+	if (conn->role == BT_CONN_ROLE_CENTRAL && !smp->remote_dist) {
 		smp_br_distribute_keys(smp);
 	}
 
@@ -1811,7 +1811,7 @@ static void smp_reset(struct bt_smp *smp)
 	atomic_set(smp->allowed_cmds, 0);
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    conn->role == BT_HCI_ROLE_MASTER) {
+	    conn->role == BT_HCI_ROLE_CENTRAL) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_SECURITY_REQUEST);
 		return;
 	}
@@ -1895,7 +1895,11 @@ static void smp_pairing_complete(struct bt_smp *smp, uint8_t status)
 						 security_err);
 		}
 
-		if (bt_auth && bt_auth->pairing_failed) {
+		/* Check SMP_FLAG_PAIRING as bt_conn_security_changed may
+		 * have called the pairing_failed callback already.
+		 */
+		if (atomic_test_bit(smp->flags, SMP_FLAG_PAIRING) &&
+		    bt_auth && bt_auth->pairing_failed) {
 			bt_auth->pairing_failed(conn, security_err);
 		}
 	}
@@ -2320,7 +2324,7 @@ static uint8_t legacy_get_pair_method(struct bt_smp *smp, uint8_t remote_io)
 	 * and responder inputs
 	 */
 	if (method == PASSKEY_ROLE) {
-		if (smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+		if (smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 			method = PASSKEY_DISPLAY;
 		} else {
 			method = PASSKEY_INPUT;
@@ -2476,7 +2480,7 @@ static uint8_t legacy_pairing_random(struct bt_smp *smp)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    conn->role == BT_HCI_ROLE_MASTER) {
+	    conn->role == BT_HCI_ROLE_CENTRAL) {
 		uint8_t ediv[2], rand[8];
 
 		/* No need to store master STK */
@@ -2535,7 +2539,7 @@ static uint8_t legacy_pairing_confirm(struct bt_smp *smp)
 	BT_DBG("");
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
 		return legacy_send_pairing_confirm(smp);
 	}
@@ -2566,7 +2570,7 @@ static void legacy_user_tk_entry(struct bt_smp *smp)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
 		return;
 	}
@@ -2639,7 +2643,7 @@ static uint8_t smp_master_ident(struct bt_smp *smp, struct net_buf *buf)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    conn->role == BT_HCI_ROLE_MASTER && !smp->remote_dist) {
+	    conn->role == BT_HCI_ROLE_CENTRAL && !smp->remote_dist) {
 		err = bt_smp_distribute_keys(smp);
 		if (err) {
 			return err;
@@ -3320,7 +3324,7 @@ static uint8_t smp_pairing_confirm(struct bt_smp *smp, struct net_buf *buf)
 	memcpy(smp->pcnf, req->val, sizeof(smp->pcnf));
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_PAIRING_RANDOM);
 		return smp_send_pairing_random(smp);
 	}
@@ -3520,7 +3524,7 @@ static uint8_t smp_dhkey_ready(struct bt_smp *smp, const uint8_t *dhkey)
 	}
 
 	atomic_clear_bit(smp->flags, SMP_FLAG_DHKEY_PENDING);
-	memcpy(smp->dhkey, dhkey, 32);
+	memcpy(smp->dhkey, dhkey, BT_DH_KEY_LEN);
 
 	/* wait for user passkey confirmation */
 	if (atomic_test_bit(smp->flags, SMP_FLAG_USER)) {
@@ -3536,7 +3540,7 @@ static uint8_t smp_dhkey_ready(struct bt_smp *smp, const uint8_t *dhkey)
 
 	if (atomic_test_bit(smp->flags, SMP_FLAG_DHKEY_SEND)) {
 #if defined(CONFIG_BT_CENTRAL)
-		if (smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+		if (smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 			return compute_and_send_master_dhcheck(smp);
 		}
 
@@ -3653,7 +3657,7 @@ static void le_sc_oob_config_set(struct bt_smp *smp,
 	int oob_config = BT_CONN_OOB_NO_DATA;
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		oob_config = req_oob_present ? BT_CONN_OOB_REMOTE_ONLY :
 					       BT_CONN_OOB_NO_DATA;
 
@@ -3693,7 +3697,7 @@ static uint8_t smp_pairing_random(struct bt_smp *smp, struct net_buf *buf)
 #endif /* !CONFIG_BT_SMP_SC_PAIR_ONLY */
 
 #if defined(CONFIG_BT_CENTRAL)
-	if (smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	if (smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		err = sc_smp_check_confirm(smp);
 		if (err) {
 			return err;
@@ -3907,7 +3911,7 @@ static uint8_t smp_ident_addr_info(struct bt_smp *smp, struct net_buf *buf)
 		 * are cleared on re-pairing we wouldn't store IRK distributed
 		 * in new pairing.
 		 */
-		if (conn->role == BT_HCI_ROLE_MASTER) {
+		if (conn->role == BT_HCI_ROLE_CENTRAL) {
 			dst = &conn->le.resp_addr;
 		} else {
 			dst = &conn->le.init_addr;
@@ -3941,7 +3945,7 @@ static uint8_t smp_ident_addr_info(struct bt_smp *smp, struct net_buf *buf)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    conn->role == BT_HCI_ROLE_MASTER && !smp->remote_dist) {
+	    conn->role == BT_HCI_ROLE_CENTRAL && !smp->remote_dist) {
 		err = bt_smp_distribute_keys(smp);
 		if (err) {
 			return err;
@@ -3983,7 +3987,7 @@ static uint8_t smp_signing_info(struct bt_smp *smp, struct net_buf *buf)
 	smp->remote_dist &= ~BT_SMP_DIST_SIGN;
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    conn->role == BT_HCI_ROLE_MASTER && !smp->remote_dist) {
+	    conn->role == BT_HCI_ROLE_CENTRAL && !smp->remote_dist) {
 		err = bt_smp_distribute_keys(smp);
 		if (err) {
 			return err;
@@ -4159,7 +4163,7 @@ static uint8_t smp_public_key_slave(struct bt_smp *smp)
 	uint8_t err;
 
 	if (!atomic_test_bit(smp->flags, SMP_FLAG_SC_DEBUG_KEY) &&
-	    memcmp(smp->pkey, sc_public_key, 32) == 0) {
+	    memcmp(smp->pkey, sc_public_key, BT_PUB_KEY_COORD_LEN) == 0) {
 		/* Deny public key with identitcal X coordinate unless it is the
 		 * debug public key.
 		 */
@@ -4216,8 +4220,8 @@ static uint8_t smp_public_key(struct bt_smp *smp, struct net_buf *buf)
 
 	BT_DBG("");
 
-	memcpy(smp->pkey, req->x, 32);
-	memcpy(&smp->pkey[32], req->y, 32);
+	memcpy(smp->pkey, req->x, BT_PUB_KEY_COORD_LEN);
+	memcpy(&smp->pkey[BT_PUB_KEY_COORD_LEN], req->y, BT_PUB_KEY_COORD_LEN);
 
 	/* mark key as debug if remote is using it */
 	if (bt_pub_key_is_debug(smp->pkey)) {
@@ -4233,9 +4237,9 @@ static uint8_t smp_public_key(struct bt_smp *smp, struct net_buf *buf)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		if (!atomic_test_bit(smp->flags, SMP_FLAG_SC_DEBUG_KEY) &&
-		    memcmp(smp->pkey, sc_public_key, 32) == 0) {
+		    memcmp(smp->pkey, sc_public_key, BT_PUB_KEY_COORD_LEN) == 0) {
 			/* Deny public key with identitcal X coordinate unless
 			 * it is the debug public key.
 			 */
@@ -4329,7 +4333,7 @@ static uint8_t smp_dhkey_check(struct bt_smp *smp, struct net_buf *buf)
 	BT_DBG("");
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		uint8_t e[16], r[16], enc_size;
 		uint8_t ediv[2], rand[8];
 
@@ -4391,7 +4395,7 @@ static uint8_t smp_dhkey_check(struct bt_smp *smp, struct net_buf *buf)
 	}
 
 #if defined(CONFIG_BT_PERIPHERAL)
-	if (smp->chan.chan.conn->role == BT_HCI_ROLE_SLAVE) {
+	if (smp->chan.chan.conn->role == BT_HCI_ROLE_PERIPHERAL) {
 		atomic_clear_bit(smp->flags, SMP_FLAG_DHCHECK_WAIT);
 		memcpy(smp->e, req->e, sizeof(smp->e));
 
@@ -4535,7 +4539,7 @@ static void bt_smp_pkey_ready(const uint8_t *pkey)
 		}
 
 		if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-		    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+		    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 			err = sc_send_public_key(smp);
 			if (err) {
 				smp_error(smp, err);
@@ -4683,7 +4687,7 @@ static void bt_smp_encrypt_change(struct bt_l2cap_chan *chan,
 
 	/* Slave distributes it's keys first */
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    conn->role == BT_HCI_ROLE_MASTER && smp->remote_dist) {
+	    conn->role == BT_HCI_ROLE_CENTRAL && smp->remote_dist) {
 		return;
 	}
 
@@ -5275,7 +5279,7 @@ int bt_smp_auth_passkey_entry(struct bt_conn *conn, unsigned int passkey)
 	smp->passkey = sys_cpu_to_le32(passkey);
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
 		err = smp_send_pairing_confirm(smp);
 		if (err) {
@@ -5327,7 +5331,7 @@ int bt_smp_auth_passkey_confirm(struct bt_conn *conn)
 		uint8_t err;
 
 #if defined(CONFIG_BT_CENTRAL)
-		if (smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+		if (smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 			err = compute_and_send_master_dhcheck(smp);
 			if (err) {
 				smp_error(smp, err);
@@ -5424,7 +5428,7 @@ static bool le_sc_oob_data_check(struct bt_smp *smp, bool oobd_local_present,
 	bool rsp_oob_present = le_sc_oob_data_rsp_check(smp);
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		if ((req_oob_present != oobd_remote_present) &&
 		    (rsp_oob_present != oobd_local_present)) {
 			return false;
@@ -5459,7 +5463,7 @@ static int le_sc_oob_pairing_continue(struct bt_smp *smp)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    smp->chan.chan.conn->role == BT_HCI_ROLE_MASTER) {
+	    smp->chan.chan.conn->role == BT_HCI_ROLE_CENTRAL) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_PAIRING_RANDOM);
 	} else if (IS_ENABLED(CONFIG_BT_PERIPHERAL)) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_DHKEY_CHECK);
@@ -5569,7 +5573,7 @@ int bt_smp_auth_pairing_confirm(struct bt_conn *conn)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
-	    conn->role == BT_CONN_ROLE_MASTER) {
+	    conn->role == BT_CONN_ROLE_CENTRAL) {
 		if (!atomic_test_bit(smp->flags, SMP_FLAG_SC)) {
 			atomic_set_bit(smp->allowed_cmds,
 				       BT_SMP_CMD_PAIRING_CONFIRM);
@@ -5629,7 +5633,7 @@ int bt_smp_start_security(struct bt_conn *conn)
 {
 	switch (conn->role) {
 #if defined(CONFIG_BT_CENTRAL)
-	case BT_HCI_ROLE_MASTER:
+	case BT_HCI_ROLE_CENTRAL:
 	{
 		int err;
 		struct bt_smp *smp;
@@ -5669,7 +5673,7 @@ int bt_smp_start_security(struct bt_conn *conn)
 	}
 #endif /* CONFIG_BT_CENTRAL && CONFIG_BT_SMP */
 #if defined(CONFIG_BT_PERIPHERAL)
-	case BT_HCI_ROLE_SLAVE:
+	case BT_HCI_ROLE_PERIPHERAL:
 		return smp_send_security_req(conn);
 #endif /* CONFIG_BT_PERIPHERAL && CONFIG_BT_SMP */
 	default:

@@ -156,10 +156,10 @@ static bool is_rodata(const void *addr)
 #if defined(CONFIG_ARM) || defined(CONFIG_ARC) || defined(CONFIG_X86) || \
 	defined(CONFIG_ARM64) || defined(CONFIG_NIOS2) || \
 	defined(CONFIG_RISCV) || defined(CONFIG_SPARC)
-	extern const char *_image_rodata_start[];
-	extern const char *_image_rodata_end[];
-	#define RO_START _image_rodata_start
-	#define RO_END _image_rodata_end
+	extern const char *__rodata_region_start[];
+	extern const char *__rodata_region_end[];
+	#define RO_START __rodata_region_start
+	#define RO_END __rodata_region_end
 #elif defined(CONFIG_XTENSA)
 	extern const char *_rodata_start[];
 	extern const char *_rodata_end[];
@@ -182,7 +182,7 @@ static bool is_rodata(const void *addr)
  */
 static void detect_missed_strdup(struct log_msg *msg)
 {
-#define ERR_MSG	"argument %d in source %s log message \"%s\" missing" \
+#define ERR_MSG	"argument %d in source %s log message \"%s\" missing " \
 		"log_strdup()."
 	uint32_t idx;
 	const char *str;
@@ -904,6 +904,13 @@ char *z_log_strdup(const char *str)
 	return dup->buf;
 }
 
+uint32_t log_get_strdup_pool_current_utilization(void)
+{
+	return IS_ENABLED(CONFIG_LOG_STRDUP_POOL_PROFILING) ?
+			log_strdup_in_use : 0;
+
+}
+
 uint32_t log_get_strdup_pool_utilization(void)
 {
 	return IS_ENABLED(CONFIG_LOG_STRDUP_POOL_PROFILING) ?
@@ -1264,7 +1271,10 @@ static int enable_logger(const struct device *arg)
 		k_thread_create(&logging_thread, logging_stack,
 				K_KERNEL_STACK_SIZEOF(logging_stack),
 				log_process_thread_func, NULL, NULL, NULL,
-				K_LOWEST_APPLICATION_THREAD_PRIO, 0, K_NO_WAIT);
+				K_LOWEST_APPLICATION_THREAD_PRIO, 0,
+				COND_CODE_1(CONFIG_LOG_PROCESS_THREAD,
+					K_MSEC(CONFIG_LOG_PROCESS_THREAD_STARTUP_DELAY_MS),
+					K_NO_WAIT));
 		k_thread_name_set(&logging_thread, "logging");
 	} else {
 		log_init();

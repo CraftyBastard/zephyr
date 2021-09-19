@@ -919,7 +919,13 @@ static void eth_mcux_init(const struct device *dev)
 
 	context->phy_state = eth_mcux_phy_state_initial;
 
+#if defined(CONFIG_SOC_SERIES_IMX_RT10XX)
+	sys_clock = CLOCK_GetFreq(kCLOCK_IpgClk);
+#elif defined(SOC_SERIES_IMX_RT11XX)
+	sys_clock = CLOCK_GetFreq(kCLOCK_Root_Bus);
+#else
 	sys_clock = CLOCK_GetFreq(kCLOCK_CoreSysClk);
+#endif
 
 	ENET_GetDefaultConfig(&enet_config);
 	enet_config.interrupt |= kENET_RxFrameInterrupt;
@@ -1535,6 +1541,6 @@ static int ptp_mcux_init(const struct device *port)
 
 DEVICE_DEFINE(mcux_ptp_clock_0, PTP_CLOCK_NAME, ptp_mcux_init,
 		NULL, &ptp_mcux_0_context, NULL, POST_KERNEL,
-		CONFIG_APPLICATION_INIT_PRIORITY, &api);
+		CONFIG_ETH_MCUX_PTP_CLOCK_INIT_PRIO, &api);
 
 #endif /* CONFIG_PTP_CLOCK_MCUX */

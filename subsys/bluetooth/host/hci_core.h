@@ -92,7 +92,9 @@ enum {
 	/* Advertiser set is currently advertising in the controller. */
 	BT_ADV_ENABLED,
 	/* Advertiser should include name in advertising data */
-	BT_ADV_INCLUDE_NAME,
+	BT_ADV_INCLUDE_NAME_AD,
+	/* Advertiser should include name in scan response data */
+	BT_ADV_INCLUDE_NAME_SD,
 	/* Advertiser set is connectable */
 	BT_ADV_CONNECTABLE,
 	/* Advertiser set is scannable */
@@ -121,10 +123,6 @@ enum {
 	 * in the controller.
 	 */
 	BT_PER_ADV_CTE_ENABLED,
-	/* The device name has been forced to appear in the advertising data
-	 * instead of in the scan response data
-	 */
-	BT_ADV_FORCE_NAME_IN_AD,
 
 	BT_ADV_NUM_FLAGS,
 };
@@ -151,24 +149,29 @@ struct bt_le_ext_adv {
 	int8_t                    tx_power;
 #endif /* defined(CONFIG_BT_EXT_ADV) */
 
-	struct k_work_delayable	timeout_work;
+	struct k_work_delayable	lim_adv_timeout_work;
 };
 
 enum {
 	/** Periodic Advertising Sync has been created in the host. */
 	BT_PER_ADV_SYNC_CREATED,
 
-	/** Periodic advertising is in sync and can be terminated */
+	/** Periodic Advertising Sync is established and can be terminated */
 	BT_PER_ADV_SYNC_SYNCED,
 
-	/** Periodic advertising is attempting sync sync */
+	/** Periodic Advertising Sync is attempting to create sync */
 	BT_PER_ADV_SYNC_SYNCING,
 
-	/** Periodic advertising is attempting sync sync */
+	/** Periodic Advertising Sync is attempting to create sync using
+	 *  Advertiser List
+	 */
+	BT_PER_ADV_SYNC_SYNCING_USE_LIST,
+
+	/** Periodic Advertising Sync established with reporting disabled */
 	BT_PER_ADV_SYNC_RECV_DISABLED,
 
 	/** Constant Tone Extension for Periodic Advertising has been enabled
-	 * in the controller.
+	 * in the Controller.
 	 */
 	BT_PER_ADV_SYNC_CTE_ENABLED,
 

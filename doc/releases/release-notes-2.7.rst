@@ -33,8 +33,53 @@ Deprecated in this release
   were deprecated in favor of utilizing
   :c:macro:`DT_STRING_TOKEN` and :c:macro:`DT_STRING_UPPER_TOKEN`
 
-Changes in this release
+* :c:macro:`BT_CONN_ROLE_MASTER` and :c:macro:`BT_CONN_ROLE_SLAVE`
+  have been deprecated in favor of
+  :c:macro:`BT_CONN_ROLE_CENTRAL` and :c:macro:`BT_CONN_ROLE_PERIPHERAL`
 
+* :c:macro:`BT_LE_SCAN_OPT_FILTER_WHITELIST`
+  has been deprecated in favor of
+  :c:macro:`BT_LE_SCAN_OPT_FILTER_ACCEPT_LIST`
+
+* The following whitelist functions have been deprecated:
+  :c:func:`bt_le_whitelist_add`
+  :c:func:`bt_le_whitelist_rem`
+  :c:func:`bt_le_whitelist_clear`
+  in favor of
+  :c:func:`bt_le_filter_accept_list_add`
+  :c:func:`bt_le_filter_accept_list_remove`
+  :c:func:`bt_le_filter_accept_list_clear`
+
+Modified in this release
+
+* The following Bluetooth macros and structures in :file:`hci.h` have been
+  modified to align with the inclusive naming in the v5.3 specification:
+
+  * ``BT_LE_FEAT_BIT_SLAVE_FEAT_REQ`` is now ``BT_LE_FEAT_BIT_PER_INIT_FEAT_XCHG``
+  * ``BT_LE_FEAT_BIT_CIS_MASTER`` is now ``BT_LE_FEAT_BIT_CIS_CENTRAL``
+  * ``BT_LE_FEAT_BIT_CIS_SLAVE`` is now ``BT_LE_FEAT_BIT_CIS_PERIPHERAL``
+  * ``BT_FEAT_LE_SLAVE_FEATURE_XCHG`` is now ``BT_FEAT_LE_PER_INIT_FEAT_XCHG``
+  * ``BT_FEAT_LE_CIS_MASTER`` is now ``BT_FEAT_LE_CIS_CENTRAL``
+  * ``BT_FEAT_LE_CIS_SLAVE`` is now ``BT_FEAT_LE_CIS_PERIPHERAL``
+  * ``BT_LE_STATES_SLAVE_CONN_ADV`` is now ``BT_LE_STATES_PER_CONN_ADV``
+  * ``BT_HCI_OP_LE_READ_WL_SIZE`` is now ``BT_HCI_OP_LE_READ_FAL_SIZE``
+  * ``bt_hci_rp_le_read_wl_size`` is now ``bt_hci_rp_le_read_fal_size``
+  * ``bt_hci_rp_le_read_wl_size::wl_size`` is now ``bt_hci_rp_le_read_fal_size::fal_size``
+  * ``BT_HCI_OP_LE_CLEAR_WL`` is now ``BT_HCI_OP_LE_CLEAR_FAL``
+  * ``BT_HCI_OP_LE_ADD_DEV_TO_WL`` is now ``BT_HCI_OP_LE_REM_DEV_FROM_FAL``
+  * ``bt_hci_cp_le_add_dev_to_wl`` is now ``bt_hci_cp_le_add_dev_to_fal``
+  * ``BT_HCI_OP_LE_REM_DEV_FROM_WL`` is now ``BT_HCI_OP_LE_REM_DEV_FROM_FAL``
+  * ``bt_hci_cp_le_rem_dev_from_wl`` is now ``bt_hci_cp_le_rem_dev_from_fal``
+  * ``BT_HCI_ROLE_MASTER`` is now ``BT_HCI_ROLE_CENTRAL``
+  * ``BT_HCI_ROLE_SLAVE`` is now ``BT_HCI_ROLE_PERIPHERAL``
+  * ``BT_EVT_MASK_CL_SLAVE_BC_RX`` is now ``BT_EVT_MASK_CL_PER_BC_RX``
+  * ``BT_EVT_MASK_CL_SLAVE_BC_TIMEOUT`` is now ``BT_EVT_MASK_CL_PER_BC_TIMEOUT``
+  * ``BT_EVT_MASK_SLAVE_PAGE_RSP_TIMEOUT`` is now ``BT_EVT_MASK_PER_PAGE_RSP_TIMEOUT``
+  * ``BT_EVT_MASK_CL_SLAVE_BC_CH_MAP_CHANGE`` is now ``BT_EVT_MASK_CL_PER_BC_CH_MAP_CHANGE``
+  * ``m_*`` structure members are now ``c_*``
+  * ``s_*`` structure members are now ``p_*``
+
+Changes in this release
 ==========================
 
 Removed APIs in this release
@@ -47,10 +92,30 @@ Removed APIs in this release
 * Removed support for the Kconfig ``USB`` option. Option ``USB_DEVICE_STACK``
   is sufficient to enable USB device support.
 
+* Removed ``CONFIG_OPENTHREAD_COPROCESSOR_SPINEL_ON_UART_ACM`` and
+  ``CONFIG_OPENTHREAD_COPROCESSOR_SPINEL_ON_UART_DEV_NAME`` Kconfig options
+  in favor of chosen node ``zephyr,ot-uart``.
+* Removed ``CONFIG_BT_UART_ON_DEV_NAME`` Kconfig option
+  in favor of direct use of chosen node ``zephyr,bt-uart``.
+* Removed ``CONFIG_BT_MONITOR_ON_DEV_NAME`` Kconfig option
+  in favor of direct use of chosen node ``zephyr,bt-mon-uart``.
+* Removed ``CONFIG_UART_MCUMGR_ON_DEV_NAME`` Kconfig option
+  in favor of direct use of chosen node ``zephyr,uart-mcumgr``.
+* Removed ``CONFIG_UART_CONSOLE_ON_DEV_NAME`` Kconfig option
+  in favor of direct use of chosen node ``zephyr,console``.
+* Removed ``CONFIG_UART_SHELL_ON_DEV_NAME`` Kconfig option
+  in favor of direct use of chosen node ``zephyr,shell-uart``.
+
 ============================
 
 Stable API changes in this release
 ==================================
+
+* Bluetooth
+
+  * Added :c:struct:`multiple` to the :c:struct:`bt_gatt_read_params` - this
+    structure contains two members: ``handles``, which was moved from
+    :c:struct:`bt_gatt_read_params`, and ``variable``.
 
 Kernel
 ******
@@ -66,6 +131,7 @@ Architectures
 
   * AARCH32
 
+     * Updated CMSIS version to 5.8.0
      * Added support for FPU in QEMU for Cortex-M, allowing to build and execute
        tests in CI with FPU and FPU_SHARING options enabled.
 
@@ -201,6 +267,8 @@ Drivers and Sensors
 
 * LoRa
 
+  * lora_send now blocks until the transmission is complete. lora_send_async
+    can be used for the previous, non-blocking behaviour.
 
 * Modem
 
@@ -275,6 +343,30 @@ Build and Infrastructure
 
 * Devicetree
 
+  * Various compatibles had incorrect vendor prefixes in their :ref:`compatible
+    <dt-important-props>` properties; the following changes were made to fix
+    these.
+
+    * ``nios,i2c`` is now ``altr,nios2-i2c``
+    * ``colorway,lpd8803`` is now ``greeled,lpd8803``
+    * ``colorway,lpd8806`` is now ``greeled,lpd8806``
+    * ``grove,light`` is now ``seeed,grove-light``
+    * ``grove,temperature`` is now ``seeed,grove-temperature``
+    * ``max,max30101`` is now ``maxim,max30101``
+    * ``ublox,sara-r4`` is now ``u-blox,sara-r4``
+    * ``xtensa,core-intc`` is now ``cdns,xtensa-core-intc``
+
+    Out of tree users of these compatibles will need to update their
+    devicetrees.
+
+    You can support multiple versions of Zephyr with one devicetree by
+    including both the old and new values in your nodes' compatible properties,
+    like this example for the LPD8803::
+
+        my-led-strip@0 {
+                compatible = "colorway,lpd8803", "greeled,lpd8803";
+                ...
+        };
 
 * West (extensions)
 

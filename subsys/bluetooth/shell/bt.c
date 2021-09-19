@@ -36,9 +36,6 @@
 #include "ll.h"
 #include "hci.h"
 
-#define DEVICE_NAME		CONFIG_BT_DEVICE_NAME
-#define DEVICE_NAME_LEN		(sizeof(DEVICE_NAME) - 1)
-
 /* Multiply bt 1.25 to get MS */
 #define BT_INTERVAL_TO_MS(interval) ((interval) * 5 / 4)
 
@@ -418,7 +415,7 @@ void le_phy_updated(struct bt_conn *conn,
 }
 #endif
 
-static struct bt_conn_cb conn_callbacks = {
+BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = connected,
 	.disconnected = disconnected,
 	.le_param_req = le_param_req,
@@ -576,8 +573,6 @@ static void bt_ready(int err)
 
 #if defined(CONFIG_BT_CONN)
 	default_conn = NULL;
-
-	bt_conn_cb_register(&conn_callbacks);
 #endif /* CONFIG_BT_CONN */
 
 #if defined(CONFIG_BT_PER_ADV_SYNC)
@@ -909,7 +904,7 @@ static int cmd_scan(const struct shell *shell, size_t argc, char *argv[])
 		} else if (!strcmp(arg, "nodups")) {
 			options &= ~BT_LE_SCAN_OPT_FILTER_DUPLICATE;
 		} else if (!strcmp(arg, "wl")) {
-			options |= BT_LE_SCAN_OPT_FILTER_WHITELIST;
+			options |= BT_LE_SCAN_OPT_FILTER_ACCEPT_LIST;
 		} else if (!strcmp(arg, "coded")) {
 			options |= BT_LE_SCAN_OPT_CODED;
 		} else if (!strcmp(arg, "no-1m")) {
@@ -1003,6 +998,9 @@ static int cmd_advertise(const struct shell *shell, size_t argc, char *argv[])
 			param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
 		} else if (!strcmp(arg, "no-name")) {
 			param.options &= ~BT_LE_ADV_OPT_USE_NAME;
+		} else if (!strcmp(arg, "name-ad")) {
+			param.options |= BT_LE_ADV_OPT_USE_NAME;
+			param.options |= BT_LE_ADV_OPT_FORCE_NAME_IN_AD;
 		} else if (!strcmp(arg, "one-time")) {
 			param.options |= BT_LE_ADV_OPT_ONE_TIME;
 		} else if (!strcmp(arg, "disable-37")) {
@@ -1128,6 +1126,9 @@ static bool adv_param_parse(size_t argc, char *argv[],
 			param->options |= BT_LE_ADV_OPT_USE_IDENTITY;
 		} else if (!strcmp(arg, "name")) {
 			param->options |= BT_LE_ADV_OPT_USE_NAME;
+		} else if (!strcmp(arg, "name-ad")) {
+			param->options |= BT_LE_ADV_OPT_USE_NAME;
+			param->options |= BT_LE_ADV_OPT_FORCE_NAME_IN_AD;
 		} else if (!strcmp(arg, "low")) {
 			param->options |= BT_LE_ADV_OPT_DIR_MODE_LOW_DUTY;
 		} else if (!strcmp(arg, "disable-37")) {
@@ -1243,6 +1244,9 @@ static int cmd_adv_data(const struct shell *shell, size_t argc, char *argv[])
 		if (strcmp(arg, "scan-response") &&
 		    *data_len == ARRAY_SIZE(ad)) {
 			/* Maximum entries limit reached. */
+			shell_print(shell, "Failed to set advertising data: "
+					   "Maximum entries limit reached");
+
 			return -ENOEXEC;
 		}
 
@@ -1260,6 +1264,8 @@ static int cmd_adv_data(const struct shell *shell, size_t argc, char *argv[])
 			(*data_len)++;
 		} else if (!strcmp(arg, "scan-response")) {
 			if (data == sd) {
+				shell_print(shell, "Failed to set advertising data: "
+						   "duplicate scan-response option");
 				return -ENOEXEC;
 			}
 
@@ -1272,11 +1278,13 @@ static int cmd_adv_data(const struct shell *shell, size_t argc, char *argv[])
 				      sizeof(hex_data) - hex_data_len);
 
 			if (!len || (len - 1) != (hex_data[hex_data_len])) {
+				shell_print(shell, "Failed to set advertising data: "
+						   "malformed hex data");
 				return -ENOEXEC;
 			}
 
 			data[*data_len].type = hex_data[hex_data_len + 1];
-			data[*data_len].data_len = hex_data[hex_data_len];
+			data[*data_len].data_len = len - 2;
 			data[*data_len].data = &hex_data[hex_data_len + 2];
 			(*data_len)++;
 			hex_data_len += len;
@@ -1868,7 +1876,7 @@ static int cmd_connect_le(const struct shell *shell, size_t argc, char *argv[])
 	return 0;
 }
 
-#if !defined(CONFIG_BT_WHITELIST)
+#if !defined(CONFIG_BT_FILTER_ACCEPT_LIST)
 static int cmd_auto_conn(const struct shell *shell, size_t argc, char *argv[])
 {
 	bt_addr_le_t addr;
@@ -1893,7 +1901,7 @@ static int cmd_auto_conn(const struct shell *shell, size_t argc, char *argv[])
 
 	return 0;
 }
-#endif /* !defined(CONFIG_BT_WHITELIST) */
+#endif /* !defined(CONFIG_BT_FILTER_ACCEPT_LIST) */
 #endif /* CONFIG_BT_CENTRAL */
 
 static int cmd_disconnect(const struct shell *shell, size_t argc, char *argv[])
@@ -1977,8 +1985,8 @@ static const char *get_conn_type_str(uint8_t type)
 static const char *get_conn_role_str(uint8_t role)
 {
 	switch (role) {
-	case BT_CONN_ROLE_MASTER: return "master";
-	case BT_CONN_ROLE_SLAVE: return "slave";
+	case BT_CONN_ROLE_CENTRAL: return "central";
+	case BT_CONN_ROLE_PERIPHERAL: return "peripheral";
 	default: return "Invalid";
 	}
 }
@@ -2432,10 +2440,10 @@ static int cmd_bonds(const struct shell *shell, size_t argc, char *argv[])
 static const char *role_str(uint8_t role)
 {
 	switch (role) {
-	case BT_CONN_ROLE_MASTER:
-		return "Master";
-	case BT_CONN_ROLE_SLAVE:
-		return "Slave";
+	case BT_CONN_ROLE_CENTRAL:
+		return "Central";
+	case BT_CONN_ROLE_PERIPHERAL:
+		return "Peripheral";
 	}
 
 	return "Unknown";
@@ -2883,7 +2891,7 @@ static int cmd_auth_pairing_confirm(const struct shell *shell,
 	return 0;
 }
 
-#if defined(CONFIG_BT_WHITELIST)
+#if defined(CONFIG_BT_FILTER_ACCEPT_LIST)
 static int cmd_wl_add(const struct shell *shell, size_t argc, char *argv[])
 {
 	bt_addr_le_t addr;
@@ -2895,9 +2903,9 @@ static int cmd_wl_add(const struct shell *shell, size_t argc, char *argv[])
 		return err;
 	}
 
-	err = bt_le_whitelist_add(&addr);
+	err = bt_le_filter_accept_list_add(&addr);
 	if (err) {
-		shell_error(shell, "Add to whitelist failed (err %d)", err);
+		shell_error(shell, "Add to fa list failed (err %d)", err);
 		return err;
 	}
 
@@ -2915,9 +2923,9 @@ static int cmd_wl_rem(const struct shell *shell, size_t argc, char *argv[])
 		return err;
 	}
 
-	err = bt_le_whitelist_rem(&addr);
+	err = bt_le_filter_accept_list_remove(&addr);
 	if (err) {
-		shell_error(shell, "Remove from whitelist failed (err %d)",
+		shell_error(shell, "Remove from fa list failed (err %d)",
 			    err);
 		return err;
 	}
@@ -2928,9 +2936,9 @@ static int cmd_wl_clear(const struct shell *shell, size_t argc, char *argv[])
 {
 	int err;
 
-	err = bt_le_whitelist_clear();
+	err = bt_le_filter_accept_list_clear();
 	if (err) {
-		shell_error(shell, "Clearing whitelist failed (err %d)", err);
+		shell_error(shell, "Clearing fa list failed (err %d)", err);
 		return err;
 	}
 
@@ -2982,7 +2990,7 @@ static int cmd_wl_connect(const struct shell *shell, size_t argc, char *argv[])
 	return 0;
 }
 #endif /* CONFIG_BT_CENTRAL */
-#endif /* defined(CONFIG_BT_WHITELIST) */
+#endif /* defined(CONFIG_BT_FILTER_ACCEPT_LIST) */
 
 #if defined(CONFIG_BT_FIXED_PASSKEY)
 static int cmd_fixed_passkey(const struct shell *shell,
@@ -3072,7 +3080,7 @@ static int cmd_auth_oob_tk(const struct shell *shell, size_t argc, char *argv[])
 #define EXT_ADV_PARAM "<type: conn-scan conn-nscan, nconn-scan nconn-nscan> " \
 		      "[ext-adv] [no-2m] [coded] "                            \
 		      "[whitelist: wl, wl-scan, wl-conn] [identity] [name] "  \
-		      "[directed "HELP_ADDR_LE"] [mode: low]"                 \
+		      "[name-ad] [directed "HELP_ADDR_LE"] [mode: low]"       \
 		      "[disable-37] [disable-38] [disable-39]"
 #else
 #define EXT_ADV_SCAN_OPT ""
@@ -3103,7 +3111,8 @@ SHELL_STATIC_SUBCMD_SET_CREATE(bt_cmds,
 	SHELL_CMD_ARG(advertise, NULL,
 		      "<type: off, on, scan, nconn> [mode: discov, non_discov] "
 		      "[whitelist: wl, wl-scan, wl-conn] [identity] [no-name] "
-		      "[one-time] [disable-37] [disable-38] [disable-39]",
+		      "[one-time] [name-ad]"
+		      "[disable-37] [disable-38] [disable-39]",
 		      cmd_advertise, 2, 8),
 #if defined(CONFIG_BT_PERIPHERAL)
 	SHELL_CMD_ARG(directed-adv, NULL, HELP_ADDR_LE " [mode: low] "
@@ -3156,9 +3165,9 @@ SHELL_STATIC_SUBCMD_SET_CREATE(bt_cmds,
 #if defined(CONFIG_BT_CENTRAL)
 	SHELL_CMD_ARG(connect, NULL, HELP_ADDR_LE EXT_ADV_SCAN_OPT,
 		      cmd_connect_le, 3, 3),
-#if !defined(CONFIG_BT_WHITELIST)
+#if !defined(CONFIG_BT_FILTER_ACCEPT_LIST)
 	SHELL_CMD_ARG(auto-conn, NULL, HELP_ADDR_LE, cmd_auto_conn, 3, 0),
-#endif /* !defined(CONFIG_BT_WHITELIST) */
+#endif /* !defined(CONFIG_BT_FILTER_ACCEPT_LIST) */
 #endif /* CONFIG_BT_CENTRAL */
 	SHELL_CMD_ARG(disconnect, NULL, HELP_NONE, cmd_disconnect, 1, 2),
 	SHELL_CMD_ARG(select, NULL, HELP_ADDR_LE, cmd_select, 3, 0),
@@ -3204,7 +3213,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(bt_cmds,
 		      HELP_ADDR_LE" <oob rand> <oob confirm>",
 		      cmd_oob_remote, 3, 2),
 	SHELL_CMD_ARG(oob-clear, NULL, HELP_NONE, cmd_oob_clear, 1, 0),
-#if defined(CONFIG_BT_WHITELIST)
+#if defined(CONFIG_BT_FILTER_ACCEPT_LIST)
 	SHELL_CMD_ARG(wl-add, NULL, HELP_ADDR_LE, cmd_wl_add, 3, 0),
 	SHELL_CMD_ARG(wl-rem, NULL, HELP_ADDR_LE, cmd_wl_rem, 3, 0),
 	SHELL_CMD_ARG(wl-clear, NULL, HELP_NONE, cmd_wl_clear, 1, 0),
@@ -3213,7 +3222,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(bt_cmds,
 	SHELL_CMD_ARG(wl-connect, NULL, "<on, off>" EXT_ADV_SCAN_OPT,
 		      cmd_wl_connect, 2, 3),
 #endif /* CONFIG_BT_CENTRAL */
-#endif /* defined(CONFIG_BT_WHITELIST) */
+#endif /* defined(CONFIG_BT_FILTER_ACCEPT_LIST) */
 #if defined(CONFIG_BT_FIXED_PASSKEY)
 	SHELL_CMD_ARG(fixed-passkey, NULL, "[passkey]", cmd_fixed_passkey,
 		      1, 1),
